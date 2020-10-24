@@ -92,8 +92,142 @@ allocator<T> alloc
 
 ### **重载的运算符**
 
-- 是具有特殊名字的函数：函数名字=operator+要定义的运算符号。
+- 是具有特殊名字的函数：函数名字 = operator+要定义的运算符号。
+
 - 和其他函数一样，重载的运算符也包含返回类型、参数列表、函数体
+
 - 重载运算符函数的数量与该运算符作用的运算对象数量一样多
+
 - 当一个重载的运算符是成员函数时，this绑定到左侧运算对象，因此成员运算符函数的（显式）参数数量比运算对象的数量少一个
-- 
+
+- 不能重载内置类型的运算符
+
+  ```c
+  int operator+(int, int)//错误
+  ```
+
+- 非成员运算符的等价调用
+
+  ```c
+  data1 + data2;
+  operator+(data1, data2);
+  ```
+
+- 成员函数的等价调用
+
+  ```c
+  data1 += data2;
+  data1.operator+=(data2);
+  ```
+
+- 重载运算符的返回类型通常情况下应该与其内置版本的返回类型兼容
+
+### 重载输出运算符<<
+
+- 通常情况下，输出运算符的第一个形参是一个非常量的ostream的引用（ostream &os），非常量是因为向流写入内容会改变其状态；引用是因为无法直接复制一个ostream对象
+
+- 第二个形参一般来说是一个常量的引用，该常量是想要打印的类型
+
+- operator<<一般返回它的ostream形参
+
+  ```c++
+  ostream &operator<<(ostream &os, const Sales_data &item)
+  {
+      os << item.isbn() << " " << item.revenue << " " << item.avg_price();
+      return os;
+  }
+  ```
+
+
+- 输入输出运算符必须是非成员函数。IO运算符通常需要读写类的非共有数据成员，所以一般被声明为友元
+
+### 重载输入运算符
+
+- 第一个形参是运算符将要读取的流的引用
+- 第二个形参是将要读取到的（非常量）对象的引用
+- 通常会返回某个给定流的引用
+
+```c++
+istream &operator>>(istream &is, Sales_data &item){
+    double price;
+    is >> item.bookNo >> item.units_sold >> price;
+    return is;
+}
+```
+
+### 递增和递减运算符
+
+- 定义前置递增/递减运算符
+
+  ```c++
+  class StrBlobPtr{
+  public:
+  	StrBlobPtr& operator++();
+      StrBlobPtr& operator--();
+  }
+  //前置运算符应该返回递增或递减后对象的引用
+  ```
+
+- 定义后置递增/递减运算符
+
+```c++
+class StrBlobPtr{
+public:
+	StrBlobPtr& operator++(int);
+    StrBlobPtr& operator--(int);
+}
+//后置运算符应该返回对象的原值（递增或递减之前的值），返回的形式是一个值而非引用	
+```
+
+后置版本接受一个额外的（不被使用）int类型的形参。这个形参唯一的作用就是区分前置版本和后置版本的函数，而不是真的要在实现后置版本时参与运算
+
+### 标准库定义的函数对象
+
+- 在算法中使用标准库函数对象
+
+  ```c++
+  sort(a.begin(), a.end(), greater<string>())
+  ```
+
+- 标准库function类型：function<int(int, int)声明了一个function类型，表示可以接收两个int，返回一个int类型的可调用对象
+
+```c++
+function<int(int, int) f1 = add;//函数指针
+function<int(int, int) f2 = divide();//函数对象类的对象(divide类重载了()运算符)
+function<int(int, int) f3 = [](int i, int j)//lambda    
+map<string, function<int(int, int)>> binops;//可以把以上三种可调用对象全都添加到map中
+```
+
+### 类型转换运算符
+
+- 一个类型转换运算符必须是类的成员函数；
+- 不能声明返回类型，形参列表也必须为空；
+- 通常应该是const
+
+```c++
+class SmallInt {
+public:
+    explicit SmallInt(int i = 0):val(i){
+        if (i < 0 || i > 255) {
+            throw std::out_of_range("Bad SmallInt value");
+        }
+    }
+    SmallInt& operator=(const SmallInt& smallInt){
+        cout << "this is default operator = !!!" << endl;
+        val = smallInt.val;
+        return *this;
+    }
+//类型转换运算符
+    explicit operator double() const { return val; }
+private:
+    double val;
+};
+int main() {
+    SmallInt si(4.1);
+//    si = 4.1;
+    cout << (double)si + 3.0;
+    return 0;
+}
+```
+
+- 当类同时定义了类型转换运算符及重载运算符时特别容易产生二义性
