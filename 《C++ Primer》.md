@@ -231,3 +231,99 @@ int main() {
 ```
 
 - 当类同时定义了类型转换运算符及重载运算符时特别容易产生二义性
+
+## 第十五章 面向对象程序设计
+
+### 一、继承
+
+使用继承，可以定义相似的类型并对其相似关系建模
+
+1. 定义基类
+
+```c++
+class Quote {
+public:
+    Quote() = default;
+
+    Quote(const string &book, double sales_price) : bookNo(book), price(sales_price) {}
+
+    string isbn() const { return bookNo; }
+
+    //返回给定数量的书籍的销售总额
+    //派生类负责改写并使用不同的折扣计算算法
+    virtual double net_price(size_t n) const { return n * price; }
+
+    virtual ~Quote() = default;
+
+private:
+    string bookNo;//书籍的ISBN编号
+protected:
+    double price = 0.0;//不打折的价格
+};
+```
+
+- 基类通常都定义一个虚析构函数
+- 基类通过在成员函数声明语句之前加上virtual，使得该函数执行动态绑定（解析过程发生在运行时而不是编译时）
+
+1. 定义派生类
+
+```c++
+class Bulk_quote : public Quote {
+public:
+    Bulk_quote() = default;
+//包含四个数据元素，自己定义的2个，继承的2个
+    Bulk_quote(const string &book, double salesPrice, size_t minQty, double discount) : Quote(book, salesPrice), min_qty(minQty),discount(discount) {}
+
+//覆盖基类的函数版本以实现基于大量购买的折扣政策
+    double net_price(size_t) const override;
+
+private:
+    std::size_t min_qty = 0;//适于折扣政策的最低购买量
+    double discount = 0.0;//小数表示的折扣额
+};
+
+double Bulk_quote::net_price(size_t cnt) const {
+// 派生类能访问基类的公有成员和受保护的（protected）成员，不能访问私有成员
+    if (cnt >= min_qty) {
+        return cnt * (1 - discount) * price;
+    } else {
+        return cnt * price;
+    }
+}
+```
+
+- 在派生类对象中含有与基类对应的组成部分，这是继承的关键所在
+- 派生类不能直接初始化基类的成员，**必须使用基类的构造函数**
+- 派生类能访问基类的公有成员和受保护的（protected）成员，不能访问私有成员
+- 如果基类定义了一个静态成员，整个继承体系中只存在该成员的唯一定义
+- 派生类的声明包含类型但不包含它的派生列表
+- class 类名 final：不能被继承的类
+
+### 二、动态绑定（运行时绑定）
+
+使用动态绑定，可以在一定程度上忽略相似类型的区别，而以统一方式使用它们的对象
+
+------
+
+
+
+# STL源码剖析
+
+## STL六大部件
+
+容器（Containers）、分配器（Allocators）、算法、迭代器、适配器、仿函数（Functors）
+
+## 一、容器分类
+
+1. Sequence Containers
+   - array
+   - vector
+   - deque
+   - list
+   - forward_list
+2. Associative Containers(红黑树：高度平衡二叉树)
+   - map/multimap
+   - set/multiset
+3. Unordered Containers
+   - unordered_map
+   - unordered_set   
