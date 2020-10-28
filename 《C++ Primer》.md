@@ -299,7 +299,19 @@ double Bulk_quote::net_price(size_t cnt) const {
 - 派生类的声明包含类型但不包含它的派生列表
 - class 类名 final：不能被继承的类
 
-### 二、动态绑定（运行时绑定）
+### 二、类型转换与继承
+
+- 可以将基类的指针或引用绑定到派生类的对象上
+- **不存在**从基类向派生类的隐式类型转换
+
+```c++
+Quote base;
+Bulk_quote &bulkQuote = base;
+```
+
+- 派生类向基类的自动类型转换只对指针或引用类型有效，**在对象之间**不存在这样的转换
+
+### 三、动态绑定（运行时绑定）
 
 使用动态绑定，可以在一定程度上忽略相似类型的区别，而以统一方式使用它们的对象
 
@@ -327,3 +339,7 @@ double Bulk_quote::net_price(size_t cnt) const {
 3. Unordered Containers
    - unordered_map
    - unordered_set   
+
+## 二、分配器
+
+allocator类
