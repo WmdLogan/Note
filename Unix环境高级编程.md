@@ -248,4 +248,92 @@ clean:
 
 `-f`：指定文件执行make命令
 
- 
+## 二、文件I/O 
+
+### 1、open
+
+```c
+#include <fcntl.h>
+int open(const char *pathname, int flags);
+int open(const char *pathname, int flags, mode_t mode);
+
+#include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
+
+int main(){
+    int fd;
+    fd = open("./dict.txt", O_RDONLY);
+    printf("fd = %d ,errno=%d:%s", fd, errno, strerror(errno));
+    close(fd);
+}
+```
+
+- `flags`是文件打开方式：`O_RDONLY | O_WRONLY | O_RDWR...`
+- 使用`O_CREAT`选项时，open函数需要同时说明第三个参数mode，即文件权限
+- 文件权限=`mode & ~umask`，umask默认为0002（八进制的2）
+- 成功返回文件的文件描述符（整数），失败返回-1，设置errno
+
+### 2、read/write
+
+```c
+#include <unistd.h>
+
+
+/*
+参数：
+fd：文件描述符 buf：存数据的缓冲区 count：缓冲区大小
+返回值：
+0：读到文件末尾 s：读到的字节数 f：-1，设置error
+*/
+ssize_t read(int fd, void *buf, size_t count);
+ssize_t write(int fd, const void *buf, size_t count);
+
+#include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
+#include <stdlib.h>
+int main(int argc,char *argv[]){
+    int fd1,fd2;
+    int n;
+    char buf[1024];
+    fd1 = open(argv[1], O_RDONLY);//read
+    if (fd1 == -1) {
+        perror("open argv1 error");
+        exit(1);
+    }
+    fd2 = open(argv[2], O_RDWR | O_CREAT | O_TRUNC, 0664);
+    if (fd2 == -1) {
+        perror("open argv2 error");
+        exit(1);
+    }
+    while((n = read(fd1, buf, 1024)) != 0) {
+        if (n < 0) {
+            perror("read error");
+            break;
+        }
+        int err = write(fd2, buf, n);
+    }
+    close(fd1);
+    close(fd2);
+}
+
+```
+
+- 库函数`fputc/fgetc`预读入缓输出
+
+### 3、文件描述符
+
+- PCB进程控制块：本质 结构体
+- 成员：文件描述符表
+- 文件描述符：0/1/2/3/4..../1023 表中可用最小的
+  - `0 - STDIN_FILENO `、`1 - STDOUT_FILENO`、`2 - STDERR_FILENO`
+
+### 4、阻塞、非阻塞
+
+- 读常规文件没有阻塞的概念
+- 产生阻塞的场景：读设备文件、读网络文件。`/dev/tty` - 终端文件
