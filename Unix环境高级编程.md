@@ -25,7 +25,7 @@
 ### 3、硬链接/软链接
 
 - 软链接：ln -s 源文件 软链接
-- 硬链接：ln 源文件 软链接
+- 硬链接：ln 源文件 硬链接
 
 ### 4、find
 
@@ -325,6 +325,7 @@ int main(int argc,char *argv[]){
 ```
 
 - 库函数`fputc/fgetc`预读入缓输出
+- 如果read返回-1并且`errno=EGAIN或EWOULDBLOCK`，说明不是read失败，而是read在以非阻塞的方式在读一个设备文件（网络文件），且文件无数据
 
 ### 3、文件描述符
 
@@ -335,5 +336,172 @@ int main(int argc,char *argv[]){
 
 ### 4、阻塞、非阻塞
 
+- 阻塞是设备文件、网络文件的属性
 - 读常规文件没有阻塞的概念
 - 产生阻塞的场景：读设备文件、读网络文件。`/dev/tty` - 终端文件
+- `open("/dev/tty",O_RDWR|O_NONBLOCK)` - 设置`/dev/tty`为非阻塞状态（默认为阻塞状态）
+
+### 5、fcntl
+
+```c
+#include <unistd.h>
+#include <fcntl.h>
+int fcntl(int fd, int cmd, ... /* arg */ );
+
+int flags = fcnl(fd, F_GETFL);
+```
+
+- 获取文件状态：`F_GETFL`
+- 设置文件状态：`F_SETFL`
+
+### 6、lseek
+
+```c
+#include <sys/types.h>
+#include <unistd.h>
+off_t lseek(int fd, off_t offset, int whence);
+```
+
+- 文件的“读”、“写"使用同一偏移位置
+- 使用lseek获取文件大小
+- 使用lseek拓展文件大小；要想真正拓展文件大小，必须有IO操作
+
+###  7、stat
+
+```c
+int stat(const char *pathname, struct stat *buf);
+struct stat {
+    dev_t     st_dev;         /* ID of device containing file */
+    ino_t     st_ino;         /* inode number */
+    mode_t    st_mode;        /* protection */
+    nlink_t   st_nlink;       /* number of hard links */
+    uid_t     st_uid;         /* user ID of owner */
+    gid_t     st_gid;         /* group ID of owner */
+    dev_t     st_rdev;        /* device ID (if special file) */
+    off_t     st_size;        /* total size, in bytes */
+    blksize_t st_blksize;     /* blocksize for filesystem I/O */
+    blkcnt_t  st_blocks;      /* number of 512B blocks allocated */
+ }
+```
+
+- 参数：
+  - pathname：文件路径
+  - buf：（传出参数）存放文件属性
+- 返回值
+  - 成功：0
+  - 失败：-1，errno
+
+- 获取文件大小：`buf.st_size`
+- 获取文件类型：`buf.st_mode`
+- 符号穿透：`stat`会，`lstat`不会
+
+### 8、目录(项)
+
+- 目录也是文件。其文件内容是该目录下的所有子文件的目录项。可以尝试用vi打开一个目录
+- 目录项(dentry)本质依然是结构体，重要成员变量有两个：文件名和i结点编号，而文件内容保存在磁盘盘块中
+
+### 9、link、unlink
+
+```c
+#include <unistd.h>
+
+int link(const char *oldpath, const char *newpath);
+int unlink(const char *pathname);
+```
+
+- 根据`link`、`unlink`实现mv操作
+- unlink函数的特征：清楚文件时，如果文件的硬链接数到0了，没有dentry对应，但该文件仍不会马上被释放。要等到所有打开该文件的进程关闭该文件，系统才会挑时间将该文件回收
+- 隐式回收：当进程结束运行时，所有该进程打开的文件会被关闭，申请的内存空间会被释放。系统的这一特征称之为隐式回收系统资源
+
+### 10、目录操作
+
+- `DIR* opendir(char *dp)`
+- `int closedir(DIR *dp)`
+- `struct dirent *readdir(DIR *dp)`
+
+### 11、递归遍历目录
+
+ls -R
+
+1. 判断命令行参数，获取用户要查询的目录名
+2. 判断用户指定的是否是目录
+3. 读目录
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <dirent.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+
+void isFile(char *name);
+//处理目录
+void read_dir(char *dir)
+{
+    DIR *dp;
+    struct dirent *sdp;
+    char path[256];
+    dp = opendir(dir);
+    if (dp == NULL) {
+        perror("opendir error");
+        return;
+    }
+//读取目录项
+    while ( (sdp = readdir(dp)) != NULL) {
+        if(strcmp(sdp->d_name,".") == 0 || strcmp(sdp->d_name,"..") == 0) {
+            continue;
+        }
+//目录项本身不可访问，需要拼接
+        sprintf(path, "%s/%s", dir, sdp->d_name);
+//判断文件类型
+        isFile(path);
+    }
+    closedir(dp);
+    return;
+}
+
+void isFile(char *name)
+{
+    int ret = 0;
+    struct stat sb;
+//获取文件属性
+    ret = stat(name, &sb);
+    if (ret == -1) {
+        perror("stat error");
+        return;
+    }
+//是目录
+    if (S_ISDIR(sb.st_mode)) {
+        read_dir(name);
+    }
+//普通文件，显示名字和大小
+    printf("%10s\t\t%ld\n", name, sb.st_size);
+    return;
+}
+
+int main(int argc, char *argv[])
+{
+//判断命令行参数
+    if (argc == 1) {
+        isFile(".");
+    } else {
+        isFile(argv[1]);
+    }
+    return 0;
+}
+
+```
+
+### 12、dup和dup2
+
+```c
+#include <unistd.h>
+
+int dup(int oldfd);
+int dup2(int oldfd, int newfd);
+```
+
+- 返回新文件描述符
+- `fcnt`函数实现dup：`fcntl(fd, F_DUPFD,...)`
+
