@@ -738,7 +738,256 @@ void *mmap(void *addr, size_t length, int prot, int flags,
   - 忽略(丢弃)
   - 捕捉(调用用户处理函数)
 -  Linux内核的进程控制块PCB是一个结构体(task_struct)，除了包含进程id、状态、工作目录、用户id、组id、文件描述符表，还包含了信号相关的信息，主要指阻塞信号集和未决信号集
-- 阻塞信号集(信号屏蔽字)：将某些信号加入集合，对他们设置屏蔽，当屏蔽x信号后，再收到该信号，该信号的处理将推后(解除屏蔽后)
+- 阻塞信号集(信号屏蔽字)：将某些信号加入集合，对他们设置屏蔽，当屏蔽x信号后，再收到该信号，该信号的处理将推后(解除屏蔽后)，信号将一直处于未决态
 - 未决信号集：
   - 信号产生，未决信号集中描述该信号的位立刻翻转为1，表示信号处于未决状态。当信号被处理对应位翻转回0。这一时刻往往非常短暂
   - 信号产生后由于某些原因(主要是阻塞)不能抵达。这类信号的集合称之为未决信号集。在解除屏蔽前，信号一直处于未决状态
+
+- `kill -l`查看所有信号
+
+```
+ 1) SIGHUP	 2) SIGINT	 3) SIGQUIT	 4) SIGILL	 5) SIGTRAP
+ 6) SIGABRT	 7) SIGBUS	 8) SIGFPE	 9) SIGKILL	10) SIGUSR1
+11) SIGSEGV	12) SIGUSR2	13) SIGPIPE	14) SIGALRM	15) SIGTERM
+16) SIGSTKFLT	17) SIGCHLD	18) SIGCONT	19) SIGSTOP	20) SIGTSTP
+21) SIGTTIN	22) SIGTTOU	23) SIGURG	24) SIGXCPU	25) SIGXFSZ
+26) SIGVTALRM	27) SIGPROF	28) SIGWINCH	29) SIGIO	30) SIGPWR
+31) SIGSYS	34) SIGRTMIN	35) SIGRTMIN+1	36) SIGRTMIN+2	37) SIGRTMIN+3
+38) SIGRTMIN+4	39) SIGRTMIN+5	40) SIGRTMIN+6	41) SIGRTMIN+7	42) SIGRTMIN+8
+43) SIGRTMIN+9	44) SIGRTMIN+10	45) SIGRTMIN+11	46) SIGRTMIN+12	47) SIGRTMIN+13
+48) SIGRTMIN+14	49) SIGRTMIN+15	50) SIGRTMAX-14	51) SIGRTMAX-13	52) SIGRTMAX-12
+53) SIGRTMAX-11	54) SIGRTMAX-10	55) SIGRTMAX-9	56) SIGRTMAX-8	57) SIGRTMAX-7
+58) SIGRTMAX-6	59) SIGRTMAX-5	60) SIGRTMAX-4	61) SIGRTMAX-3	62) SIGRTMAX-2
+63) SIGRTMAX-1	64) SIGRTMAX	
+```
+
+==注意函数中都使用信号名称！！！因为不同系统中信号编号有可能不同，但名称一致==
+
+- 信号四要素：编号、名称、事件、默认处理动作。可通过`man 7 signal`查看帮助文档
+
+#### 1、kill函数
+
+```c
+#include <signal.h>
+
+int kill(pid_t pid, int sig);
+```
+
+-  参数：
+  - sig：信号宏名称
+  - pid：
+    - 正数：发送信号给指定的进程
+    - 0：发送信号给与调用kill函数进程属于同一进程组的所有进程
+    - <-1：取`|pid|`发送给对应**进程组**
+    - -1：发送给进程有权限发送的系统中所有进程
+
+#### 2、alarm函数
+
+- 设置定时器(闹钟)。在指定seconds后，内核会给当前进程发送`SIGALRM`信号。进程收到该信号，默认动作终止
+- 每个进程都有且只有唯一一个定时器
+
+#### 3、信号集操作函数
+
+- 自定义信号集，然后与PCB阻塞信号集进行位操作
+
+```c
+#include <signal.h>
+
+sigset_set set;//自定义信号集
+int sigpending(sigset_t *set);//查看未决信号集
+int sigemptyset(sigset_t *set);
+int sigfillset(sigset_t *set);
+int sigaddset(sigset_t *set, int signum);
+int sigdelset(sigset_t *set, int signum);
+int sigismember(const sigset_t *set, int signum);
+//用来屏蔽信号、解除屏蔽也可使用该函数。其本质，读取或修改进程的信号屏蔽字(PCB)
+int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+//注册信号处理函数
+typedef void (*sighandler_t)(int);
+sighandler_t signal(int signum, sighandler_t handler);
+//修改信号处理动作(通常在Linux用其来注册一个信号的捕捉函数)
+int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact);
+```
+
+4、SIGCHLD信号
+
+-  产生条件：只要子进程状态发生变化就会产生该信号
+-  借助`SIGCHID`信号回收子进程
+
+5、中断系统调用
+
+1. 慢速系统调用：可能会使进程永远阻塞的一类。如果在阻塞期间收到一个信号，该系统调用就被中断，不再继续执行；也可以设定系统调用是否重启。如`read`、`write`、`pause`、`wait`
+2. 其他系统调用：`getpid`、`getppid`、`fork`
+
+### 4、守护进程
+
+- 是linux中的后台服务进程，通常独立于控制终端并且周期性的执行某种任务或等待处理某些发生的事件。一般采用以d结尾的名字
+
+- linux后台的一些系统服务进程，没有控制终端，不能直接和用户交互。不受用户登录、注销的影响，一直在运行着，它们都是守护进程
+- 创建守护进程，最关键的一步是用setsid函数创建一个新的Session，并成为Session Leader
+
+- 创建守护进程模型
+  - 创建子进程，父进程退出
+  - 在子进程中创建新会话
+  - 根据需要改变当前目录
+  - 根据需要重设文件权限掩码
+  - 根据需要关闭文件描述符
+  - 开始执行守护进程逻辑
+
+## 五、线程
+
+### 1、概念
+
+- LWP：light weight process
+- 进程有独立地址空间，拥有PCB
+- 线程有独立的PCB，但没有独立的地址空间（共享）
+- Linux下
+  - 线程：最小的执行单位
+  - 进程：最小分配资源单位，可看成是只有一个线程的进程
+- 三级映射：进程PCB -> 页目录(可看成数组，首地址位于PCB中) -> 页表 -> 物理页面 -> 内存单元]
+- 线程共享资源：
+  -  文件描述符表
+  -  每种信号的处理方式
+  -  当前工作目录
+  -  用户ID和组ID
+  -  内存地址空间(.text/.data/.bss/heap/共享库)
+- 线程非共享资源：
+  - 线程id
+  - 处理器现场和栈指针(内核栈)
+  - 独立的栈空间(用户空间栈)
+  - errno变量
+  - 信号屏蔽字
+  - 调度优先级
+- `pthread_exit()`：退出当前线程
+- `pthread_cancel()`：杀死线程。需要一个进内核的契机（取消点）才能执行。使用`pthread_testcancel()`函数
+- `exit()`：退出当前进程
+- `return`：返回到当前函数调用者那里去
+- `pthread_join()`：阻塞等待线程退出，获取线程退出状态。其作用对应于进程中`waitpid()`函数
+- `pthread_attr`：线程属性，如线程分离属性
+- 线程同步：多个线程访问共享数据时有先后顺序。避免与时间有关的错误
+
+### 2、锁
+
+- 互斥锁：
+  - 尽量保证锁的粒度越小越好
+  - 互斥锁本质是。可以看成是初值为1的整数
+  - 加锁：--操作，阻塞线程
+  - 解锁：++操作，唤醒阻塞在锁上的线程
+  - try锁：尝试加锁，成功--，失败返回
+- 读写锁。相较于互斥锁而言，当读线程多的时候，提高访问效率
+  - `pthread_rwlock_rdlock`：读锁。读锁加锁会成功，写锁加锁会失败
+  - `pthread_rwlock_rwlock`：写锁。解锁前，所有对该锁加锁的线程都会被阻塞
+  - 写独占、读共享。写锁优先级高
+- 死锁
+  - 对一个互斥量反复加锁
+  - 线程1有A锁，请求B锁；线程2有B锁，请求A锁
+
+### 3、条件变量
+
+- 条件变量：本身不是锁。但是通常结合锁来使用
+  - `pthread_cond_wait`：
+    - 阻塞等待一个条件变量满足；
+    - 释放已经掌握的互斥锁(相当于`pthread_mutex_unlock`)
+    - 当被唤醒时，即函数返回时，解除阻塞并重新申请获取互斥锁(相当于`pthread_mutex_lock`)
+- 生产者消费者模型
+
+```c
+//
+// Created by logan on 20-12-15.
+//
+#include <stdlib.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <stdio.h>
+
+//public data which is needed to be protected
+struct msg{
+    struct msg *next;
+    int num;
+};
+
+struct msg *head;
+
+//static ini,a conditional variable and a mutex
+pthread_cond_t has_product = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+
+void *consumer(void *p)
+{
+    struct msg *mp;
+    
+    for(; ;){
+        pthread_mutex_lock(&lock);
+        while(head == NULL){
+//wait for a signal to wake 
+            pthread_cond_wait(&has_product, &lock);
+        }
+        mp = head;
+        head = mp->next;//consume one product
+        pthread_mutex_unlock(&lock);
+
+        printf("-Consume %lu---%d\n", pthread_self(), mp->num);
+        free(mp);
+        sleep(rand() % 5);
+    }
+}
+
+void *producer(void *p)
+{
+    struct msg *mp;
+    for(;;){
+        mp = malloc(sizeof(struct msg));
+        mp->num = rand() % 1000 + 1;//produce one product
+        printf("-Produce -----------%d\n", mp->num);
+
+        pthread_mutex_lock(&lock);
+        mp->next = head;
+        head = mp;
+        pthread_mutex_unlock(&lock);
+
+//wake up a thread that is waiting this conditional variable
+        pthread_cond_signal(&has_product);
+        sleep(rand() % 5);
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    pthread_t pid, cid;
+    srand(time(NULL));
+
+    pthread_create(&pid, NULL, producer, NULL);
+    pthread_create(&cid, NULL, consumer, NULL);
+
+    pthread_join(pid, NULL);
+    pthread_join(cid, NULL);
+
+    return 0;
+}
+```
+
+### 4、信号量(Semaphore)
+
+- 相当于初始化值为N的互斥量。N值表示同时访问共享数据区的线程区
+- `sem_init、sem_destroy、sem_wait、sem_trywait、sem_timewait、sem_post`
+  - 以上6个函数都是成功返回0，失败返回-1同时设置errno
+- `sem_t`类型：本质是结构体。但应用期间可简单看作为整数，忽略实现细节(类似于使用文件描述符)
+  - `sem_t sem`规定信号量不能为负数。头文件`<semaphore.h>`
+
+`sem_wait：
+
+- 信号量大于0，则信号量--
+- 信号量等于0，造成线程阻塞
+
+`sem_post
+
+- 将信号量++，同时唤醒阻塞在信号量上的线程
+- 信号量的初值，决定了占用信号量的线程的个数
+
+# Linux网络编程
+
+## 网络基础
+
+## socket编程
+
+## 高并发服务器
